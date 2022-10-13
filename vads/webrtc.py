@@ -27,7 +27,7 @@ class WebRTC():
         return audio, sr
     
 
-    def get_frames(self, audio, sr):
+    def _split_to_frames(self, audio, sr):
         offset = 0
         timestamp = 0.0
         n = int(sr * (self._chunk_size / 1000.0) * 2)
@@ -36,13 +36,13 @@ class WebRTC():
             yield {
                 "data": audio[offset:offset + n],
                 "start": timestamp,
-                "duration": duration
+                "end": timestamp+duration
             }
             timestamp += duration
             offset += n
 
 
-    def get_speech_frames(self, frames, sr):
+    def _get_speech_frames(self, frames, sr):
         num_frames = int(self._window_size / self._chunk_size)
         # We use a deque for our sliding window/ring buffer.
         ring_buffer = deque(maxlen=num_frames)
@@ -80,44 +80,39 @@ class WebRTC():
                 # yield whatever audio we've collected.
                 if num_unvoiced > self._merge_ratio * ring_buffer.maxlen:
                     triggered = False
-                    yield [
-                        b''.join([f["data"] for f in voiced_frames]),
-                        voiced_frames[0]["start"],
-                        voiced_frames[-1]["start"]
-                    ]
+                    yield {
+                        "data": b''.join([f["data"] for f in voiced_frames]),
+                        "start": voiced_frames[0]["start"],
+                        "end": voiced_frames[-1]["end"]
+                    }
                     ring_buffer.clear()
                     voiced_frames = []
         # If we have any leftover voiced audio when we run out of input,
         # yield it.
         if voiced_frames:
-            yield [
-                b''.join([f["data"] for f in voiced_frames]),
-                voiced_frames[0]["start"],
-                voiced_frames[-1]["start"]
-            ]
+            yield {
+                "data": b''.join([f["data"] for f in voiced_frames]),
+                "start": voiced_frames[0]["start"],
+                "end": voiced_frames[-1]["end"]
+            }
     
 
-    def merge_frames(self, speech_frames):
+    def _merge_speech_frames(self, speech_frames):
         SCALE = 6e-5
         THRESHOLD = 0.3
         merge_frames = list()
         timestamp_start = 0.0
         timestamp_end = 0.0
         # removing start, end, and long sequences of sils
-        for i, segment in enumerate(speech_frames):
-            merge_frames.append(segment[0])
+        for i, frame in enumerate(speech_frames):
+            merge_frames.append(frame["data"])
             if i and timestamp_start:
-                sil_duration = segment[1] - timestamp_end # TODO: can be optimized
-                if sil_duration > THRESHOLD:
-                    merge_frames.append(
-                        int(THRESHOLD / SCALE // 2)*(b'\x00\x00')
-                    )
-                else:
-                    merge_frames.append(
-                        int((sil_duration / SCALE // 2))*(b'\x00\x00')
-                    )
-            timestamp_start = segment[1]
-            timestamp_end = segment[2]
+                sil_duration = min(frame["start"] - timestamp_end, THRESHOLD)
+                merge_frames.append(
+                    int((sil_duration / SCALE // 2))*(b'\x00\x00')
+                )
+            timestamp_start = frame["start"]
+            timestamp_end = frame["end"]
         return b''.join(merge_frames)
     
     
@@ -125,6 +120,20 @@ class WebRTC():
         # convert bytes to tensor
         audio = convert_byte_to_tensor(audio) 
         return audio, sr
+    
+
+    def get_speech_boundaries(self, audio, sr):
+        boundaries = []
+        # preprocess audio if needed
+        audio, sr = self._preprocess_audio(audio, sr)
+        # get frames having speech
+        frames = list(self._split_to_frames(audio, sr))
+        for speech_frame in self._get_speech_frames(frames, sr):
+            boundaries.append({
+                "start": speech_frame["start"],
+                "end": speech_frame["end"]
+            })
+        return boundaries
 
 
     def trim_silence(self, audio, sr):
@@ -132,10 +141,10 @@ class WebRTC():
         # preprocess audio if needed
         audio, sr = self._preprocess_audio(audio, sr)
         # get frames having speech
-        frames = list(self.get_frames(audio, sr))
-        speech_frames = self.get_speech_frames(frames, sr)
+        frames = list(self._split_to_frames(audio, sr))
+        speech_frames = self._get_speech_frames(frames, sr)
         # merge speech frames
-        merged_frame = self.merge_frames(speech_frames)
+        merged_frame = self._merge_speech_frames(speech_frames)
         # post-process audio if needed
         audio, sr = self._postprocess_audio(merged_frame, sr)
         # change sample rate back to the original one
@@ -150,9 +159,9 @@ if __name__ == "__main__":
     
     print("Running WebRTC Vad")
     samples_dir = join(dirname(dirname(abspath(__file__))), "samples")
-    audio_filepath = join(samples_dir, "example_48k.mp3")
+    audio_filepath = join(samples_dir, "example_48k.wav")
     audio, sr = load_audio(audio_filepath)
     
     vad = WebRTC()
     audio, sr = vad.trim_silence(audio, sr)
-    save_audio(audio, sr, join(samples_dir, "example_vad_48k.wav"))
+    save_audio(audio, sr, join(samples_dir, "webrtc_example_48k.wav"))
