@@ -2,9 +2,10 @@ import webrtcvad
 from collections import deque
 
 from utils import *
+from vads.vad import Vad
 
 
-class WebRTC():
+class WebRTC(Vad):
     def __init__(self, agg=3, chunk_size=30, window_size=300, merge_ratio=0.9):
         self._vad = webrtcvad.Vad(agg)
         self._chunk_size = chunk_size
@@ -14,14 +15,8 @@ class WebRTC():
     
 
     def _preprocess_audio(self, audio, sr):
-        # check if audio is mono
-        if audio.size(0) != 1:
-            audio = change_num_channels(audio, sr, 1)
-        # check if sample rate is valid
-        if sr not in self._valid_sr:
-            tgt_sr = get_closest_sample_rate(sr, self._valid_sr)
-            audio = change_sample_rate(audio, sr, tgt_sr)
-            sr = tgt_sr
+        # change audio to mono & fix sample rate
+        audio, sr = super()._preprocess_audio(audio, sr)
         # convert audio to bytes
         audio = convert_tensor_to_bytes(audio)
         return audio, sr
