@@ -49,13 +49,13 @@ class Silero(Vad):
 
     def _split_to_frames(self, audio, sr):
         self._vad.reset_states()
-        audio_length_samples = len(audio)
+        end_sample = len(audio)
 
-        for current_start_sample in range(0, audio_length_samples, self._window_size_samples):
-            chunk = audio[current_start_sample: current_start_sample + self._window_size_samples]
+        for start_sample in range(0, end_sample, self._window_size_samples):
+            chunk = audio[start_sample:start_sample+self._window_size_samples]
             yield {
                 "data": chunk,
-                "start": current_start_sample, # in samples
+                "start": start_sample, # in samples
                 "end": len(chunk) # in samples
             }
 
@@ -94,7 +94,8 @@ class Silero(Vad):
                     continue
                 else:
                     current_speech['end'] = temp_end
-                    if (current_speech['end'] - current_speech['start']) > min_speech_samples:
+                    dur = current_speech['end'] - current_speech['start']
+                    if dur > min_speech_samples:
                         speech_frames.append(current_speech)
                     temp_end = 0
                     current_speech = {}
@@ -107,17 +108,39 @@ class Silero(Vad):
         speech_pad_samples = sr * self._speech_pad_ms / 1000
         for i, speech in enumerate(speech_frames):
             if i == 0:
-                speech['start'] = int(max(0, speech['start'] - speech_pad_samples))
+                speech['start'] = int(
+                    max(0, speech['start'] - speech_pad_samples)
+                )
             if i != len(speech_frames) - 1:
                 silence_duration = speech_frames[i+1]['start'] - speech['end']
                 if silence_duration < 2 * speech_pad_samples:
                     speech['end'] += int(silence_duration // 2)
-                    speech_frames[i+1]['start'] = int(max(0, speech_frames[i+1]['start'] - silence_duration // 2))
+                    speech_frames[i+1]['start'] = int(
+                        max(
+                            0,
+                            speech_frames[i+1]['start'] - silence_duration//2
+                        )
+                    )
                 else:
-                    speech['end'] = int(min(audio_length_samples, speech['end'] + speech_pad_samples))
-                    speech_frames[i+1]['start'] = int(max(0, speech_frames[i+1]['start'] - speech_pad_samples))
+                    speech['end'] = int(
+                        min(
+                            audio_length_samples,
+                            speech['end'] + speech_pad_samples
+                        )
+                    )
+                    speech_frames[i+1]['start'] = int(
+                        max(
+                            0,
+                            speech_frames[i+1]['start'] - speech_pad_samples
+                        )
+                    )
             else:
-                speech['end'] = int(min(audio_length_samples, speech['end'] + speech_pad_samples))
+                speech['end'] = int(
+                    min(
+                        audio_length_samples,
+                        speech['end'] + speech_pad_samples
+                    )
+                )
             speech["data"] = audio[speech["start"]: speech["end"]]
         return speech_frames
     
@@ -169,12 +192,12 @@ if __name__ == "__main__":
     from utils import load_audio, save_audio
     
     print("Running Silero Vad")
-    samples_dir = join(dirname(dirname(abspath(__file__))), "samples")
-    audio_filepath = join(samples_dir, "example_16k.wav")
+    # samples_dir = join(dirname(dirname(abspath(__file__))), "samples")
+    # audio_filepath = join(samples_dir, "example_16k.wav")
+    audio_filepath = "dataset/ava_speech/_a9SWtcaNj8.wav"
     audio, sr = load_audio(audio_filepath)
     
     vad = Silero()
-    # print(vad.get_speech_boundaries(audio, sr))
-    audio, sr = vad.trim_silence(audio, sr)
+    print(vad.get_speech_boundaries(audio, sr))
+    # audio, sr = vad.trim_silence(audio, sr)
     # save_audio(audio, sr, join(samples_dir, "silero_example_16k.wav"))
-    save_audio(audio, sr, "silero_example_16k.wav")

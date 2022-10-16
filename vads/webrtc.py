@@ -115,20 +115,6 @@ class WebRTC(Vad):
         # convert bytes to tensor
         audio = convert_byte_to_tensor(audio) 
         return audio, sr
-    
-
-    def get_speech_boundaries(self, audio, sr):
-        boundaries = []
-        # preprocess audio if needed
-        audio, sr = self._preprocess_audio(audio, sr)
-        # get frames having speech
-        frames = list(self._split_to_frames(audio, sr))
-        for speech_frame in self._get_speech_frames(frames, sr):
-            boundaries.append({
-                "start": speech_frame["start"],
-                "end": speech_frame["end"]
-            })
-        return boundaries
 
 
     def trim_silence(self, audio, sr):
