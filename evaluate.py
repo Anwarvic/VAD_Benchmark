@@ -32,20 +32,6 @@ class SpeechLabel:
         self.label = label
 
 
-def get_speech_boundaries(vad, audio, sr):
-    boundaries = []
-    # preprocess audio if needed
-    audio, sr = vad._preprocess_audio(audio, sr)
-    # get frames having speech
-    frames = list(vad._split_to_frames(audio, sr))
-    for speech_frame in vad._get_speech_frames(frames, sr):
-        boundaries.append({
-            "start": speech_frame["start"],
-            "end": speech_frame["end"]
-        })
-    return boundaries
-
-
 def write_labels(vad, audio_filepath, out_filepath):
     """Uses the given vad to get labels from the given audio."""
     audio, sr = load_audio(audio_filepath)
