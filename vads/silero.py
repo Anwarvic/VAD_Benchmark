@@ -7,12 +7,13 @@ from vads.vad import Vad
 
 class Silero(Vad):
     def __init__(self,
-            threshold: float = 0.5,
+            threshold: float = 0.9,
+            window_size_ms: int = 96,
             min_speech_ms: int = 250,
             min_silence_ms: int = 100,
-            window_size_ms: int = 96,
             speech_pad_ms: int = 30,
         ):
+        super().__init__(threshold, window_size_ms)
         self._vad, _ = torch.hub.load(
             repo_or_dir='snakers4/silero-vad',
             model='silero_vad',
@@ -34,7 +35,7 @@ class Silero(Vad):
                 "Better set window_size_ms to 16, 32 or 48 for 8000" + 
                 " sample rate!"
             )
-        if self._window_size_ms not in [15, 32, 48, 64, 96]:
+        if self._window_size_ms not in [16, 32, 48, 64, 96]:
             warnings.warn(
                 "Unusual window_size_ms! Try:\n" +
                 "- [32, 64, 96] for 16000 sampling_rate\n" +
@@ -143,31 +144,15 @@ class Silero(Vad):
                         speech['end'] + speech_pad_samples
                     )
                 )
-            speech["data"] = audio[speech["start"]: speech["end"]]
         return speech_frames
 
 
-    def _merge_speech_frames(self, speech_frames):
-        return torch.cat([
-            frame["data"]
+    def _merge_speech_frames(self, speech_frames, audio, sr):
+        audio = torch.cat([
+            audio[frame["start"]: frame["end"]]
             for frame in speech_frames
         ])
-
-
-    def get_speech_boundaries(self, audio, sr):
-        boundaries = []
-        # preprocess audio if needed
-        audio, sr = self._preprocess_audio(audio, sr)
-        # get frames having speech
-        frames = list(self._split_to_frames(audio, sr))
-        speech_frames = self._get_speech_frames(frames, audio, sr)
-        for speech_frame in speech_frames:
-            boundaries.append({
-                "start": speech_frame["start"] / sr,
-                "end": speech_frame["end"] / sr
-            })
-        return boundaries
-
+        return audio, sr
 
     def _postprocess_audio(self, audio, sr):
         audio, sr = super()._postprocess_audio(audio, sr)
@@ -178,14 +163,15 @@ class Silero(Vad):
 
     def trim_silence(self, audio, sr):
         # preprocess audio if needed
+        orig_sr = sr
         audio, sr = self._preprocess_audio(audio, sr)
         # get frames having speech
         frames = list(self._split_to_frames(audio, sr))
         speech_frames = self._get_speech_frames(frames, audio, sr)
         # merge speech frames
-        merged_frame = self._merge_speech_frames(speech_frames)
+        audio, sr = self._merge_speech_frames(speech_frames, audio, sr)
         # post-process audio if needed
-        audio, sr = self._postprocess_audio(merged_frame, sr)
+        audio, sr = self._postprocess_audio(audio, orig_sr)
         return audio, sr
 
 
