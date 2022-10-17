@@ -8,8 +8,8 @@ from vads.vad import Vad
 class Silero(Vad):
     def __init__(self,
             threshold: float = 0.5,
-            min_speech_duration_ms: int = 250,
-            min_silence_duration_ms: int = 100,
+            min_speech_ms: int = 250,
+            min_silence_ms: int = 100,
             window_size_ms: int = 96,
             speech_pad_ms: int = 30,
         ):
@@ -17,11 +17,11 @@ class Silero(Vad):
             repo_or_dir='snakers4/silero-vad',
             model='silero_vad',
             force_reload=True,
-            onnx=False
+            onnx=True
         )
         self._threshold = threshold
-        self._min_speech_duration_ms = min_speech_duration_ms
-        self._min_silence_duration_ms = min_silence_duration_ms
+        self._min_speech_ms = min_speech_ms
+        self._min_silence_ms = min_silence_ms
         self._window_size_ms = window_size_ms
         self._speech_pad_ms = speech_pad_ms
         self._valid_sr = [8000, 16000]
@@ -68,8 +68,8 @@ class Silero(Vad):
         neg_threshold = self._threshold - 0.15
         temp_end = 0
 
-        min_speech_samples = sr * self._min_speech_duration_ms // 1000
-        min_silence_samples = sr * self._min_silence_duration_ms // 1000
+        min_speech_samples = sr * self._min_speech_ms // 1000
+        min_silence_samples = sr * self._min_silence_ms // 1000
         window_size_samples = sr * self._window_size_ms // 1000
         audio_length_samples = len(audio)
         for i, frame in enumerate(frames):
@@ -199,8 +199,6 @@ if __name__ == "__main__":
     audio, sr = load_audio(audio_filepath)
 
     vad = Silero()
-    # print(vad.get_speech_boundaries(audio, sr))
     audio, sr = vad.trim_silence(audio, sr)
-    # save_audio(audio, sr, join(samples_dir, "silero_example_16k.wav"))
-    save_audio(audio, sr, "silero_example_16k.wav")
+    save_audio(audio, sr, join(samples_dir, "silero_example_16k.wav"))
     
