@@ -2,8 +2,15 @@ from utils import *
 
 
 class Vad:
-    def __init__(self):
-        pass
+    def __init__(self, threshold, window_size_ms):
+        if not (0 < threshold < 1):
+            raise ValueError(
+                "Aggression threshold is a decimal value between 0 and 1."
+            )
+        if type(window_size_ms) != int:
+            raise ValueError(
+                f"Expected integer for Window Size, got {type(window_size_ms)}!"
+            )
     
 
     def _preprocess_audio(self, audio, sr):

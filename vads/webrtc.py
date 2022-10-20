@@ -7,7 +7,7 @@ from vads.vad import Vad
 
 class WebRTC(Vad):
     def __init__(self,
-            threshold=0.2,
+            threshold=0.9,
             window_size_ms=96,
             merge_ratio=0.9
         ):
@@ -142,7 +142,7 @@ if __name__ == "__main__":
     
     print("Running WebRTC Vad")
     samples_dir = join(dirname(dirname(abspath(__file__))), "samples")
-    audio_filepath = join(samples_dir, "example_48k.wav")
+    audio_filepath = join(samples_dir, "double_48k.wav")
     audio, sr = load_audio(audio_filepath)
 
     vad = WebRTC()
