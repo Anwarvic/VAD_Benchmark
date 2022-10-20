@@ -1,3 +1,4 @@
 torch
 webrtcvad
 torchaudio
+onnxruntime
