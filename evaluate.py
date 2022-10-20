@@ -20,33 +20,14 @@ import pandas as pd
 from glob import glob
 from tqdm import tqdm
 from pathlib import Path
-from collections import defaultdict
+from itertools import product
+import matplotlib.pyplot as plt
+from tqdm.contrib.concurrent import process_map
 
 from utils import load_audio
 
 
-class SpeechLabel:
-    def __init__(self, start, end, label):
-        self.start = start
-        self.end = end
-        self.label = label
-
-
-def write_labels(vad, audio_filepath, out_filepath):
-    """Uses the given vad to get labels from the given audio."""
-    audio, sr = load_audio(audio_filepath)
-    audio_id = Path(audio_filepath).stem
-    labels = [
-        {
-            "audio_id": audio_id,
-            "start": b["start"],
-            "end": b["end"],
-            "label": "SPEECH"
-        }
-        for b in vad.get_speech_boundaries(audio, sr)
-    ]
-    df = pd.DataFrame(labels)
-    df.to_csv(out_filepath, mode='a', header=False, index=False)
+vad = None # GLOBAL VARIABLE
 
 
 def parse_label_file(label_filepath, offset_time):
@@ -59,79 +40,137 @@ def parse_label_file(label_filepath, offset_time):
     out = {}
     for audio_id, group in df.groupby('audio_id'):
         out[audio_id] = [
-            SpeechLabel(
-                start = row["start_time"]-offset_time,
-                end = row["end_time"]-offset_time,
-                label = row["label"]
-            )
+            {
+                "start": row["start_time"]-offset_time,
+                "end": row["end_time"]-offset_time,
+                "label": row["label"]
+            }
             for _, row in group.iterrows()
         ]
     return out
 
 
-def get_duration_labels(true_labels, audio_ids):
-    acc_true_labels = defaultdict(float)
-    for audio_id in audio_ids:
-        for true_label in true_labels[audio_id]:
-            true_dur = true_label.end - true_label.start
-            acc_true_labels[true_label.label] += true_dur
-    return acc_true_labels
+def get_speech_boundaries(audio_filepath):
+    """Uses the given vad to get speech from the given audio."""
+    global vad
+    # read audio
+    audio, sr = load_audio(audio_filepath)
+    # preprocess audio if needed
+    audio, sr = vad._preprocess_audio(audio, sr)
+    # get frames having speech
+    frames = list(vad._split_to_frames(audio, sr))
+    speech_frames = vad._get_speech_frames(frames, audio, sr)
+    return [
+        {
+            "start": speech_frame["start"] / sr, #in milliseconds 
+            "end": speech_frame["end"] / sr, #in milliseconds
+            "label": "SPEECH"
+        }
+        for speech_frame in speech_frames
+    ]
 
 
-def get_overlaps(true_labels, hyp_labels):
-    overlaps = defaultdict(float)
-    for audio_id in tqdm(true_labels, "Calculating Overlap"):
-        for true_label in true_labels[audio_id]:
-            if audio_id in hyp_labels:
-                for hyp_label in hyp_labels[audio_id]:
-                    latest_start = max(true_label.start, hyp_label.start)
-                    earliest_end = min(true_label.end, hyp_label.end)
-                    dur = (
-                        earliest_end - latest_start
-                        if latest_start < earliest_end
-                        else 0
-                    )
-                    overlaps[(true_label.label, hyp_label.label)] += dur
-    return overlaps
+def get_speech_boundaries_parallel(audio_filepaths, n_workers, desc=None):
+    """Runs get_speech_boundaries() function in parallel."""
+    boundaries = process_map(
+        get_speech_boundaries,
+        audio_filepaths,
+        max_workers=n_workers,
+        desc=desc
+    )
+    # sanity check
+    assert len(boundaries) == len(audio_filepaths)
+    # return labels
+    out_speech_labels = {}
+    for audio_filepath, speech_boundaries in zip(audio_filepaths, boundaries):
+        audio_id = Path(audio_filepath).stem
+        out_speech_labels[audio_id] = speech_boundaries
+    return out_speech_labels
+
+
+def get_precision_recall(
+        segments_per_audio_ref,
+        segments_per_audio_hyp,
+        speech_labels
+    ):
+    """Gets precision and recall of VAD output labels."""
+    speech_dur_ref = 0
+    speech_dur_hyp = 0
+    speech_overlap_dur = 0
+    # iterate over processed audios
+    for audio_id in tqdm(segments_per_audio_hyp, "Calculating P/R"):
+        # cumulate ref. speech duration
+        for ref_seg in segments_per_audio_ref[audio_id]:
+            if ref_seg["label"] in speech_labels:
+                speech_dur_ref += ref_seg["end"] - ref_seg["start"]
+        # iterate over hypothesized speech segments
+        for hyp_seg in segments_per_audio_hyp[audio_id]:
+            # cumulate hyp. speech duration
+            speech_dur_hyp += hyp_seg["end"] - hyp_seg["start"]
+            # iterate over segments of true labels
+            for ref_seg in segments_per_audio_ref[audio_id]:
+                # ignore non-speech segments
+                if ref_seg["label"] not in speech_labels:
+                    continue
+                # get overlap
+                latest_start = max(ref_seg["start"], hyp_seg["start"])
+                earliest_end = min(ref_seg["end"], hyp_seg["end"])
+                speech_overlap_dur += (
+                    earliest_end - latest_start
+                    if latest_start < earliest_end
+                    else 0
+                )
+    # calculate precision & recall
+    P = speech_overlap_dur / speech_dur_hyp
+    R = speech_overlap_dur / speech_dur_ref
+    return P, R
 
 
 
 def run(args):
+    global vad
     vads = __import__("vads")
-    vad_models = [getattr(vads, cls)() for cls in args.vad_models]
     os.makedirs(args.out_path, exist_ok=True)
-    
-    audio_files = glob(str(args.dataset_path) + "/*.wav")
-    # get labels for every vad model
-    for vad in vad_models:
-        vad_name = vad.__class__.__name__
-        print(f"Using {vad_name} vad")
-        # load predicted labels CSV file if already found
-        out_filepath = os.path.join(args.out_path, vad_name+".csv")
-        if os.path.exists(out_filepath):
-            labeled_audio_ids = set(
-                pd.read_csv(out_filepath).iloc[:,0].tolist()
-            )
-        # iterate over audio files
-        for audio_filepath in tqdm(audio_files):
-            audio_id = Path(audio_filepath).stem
-            if audio_id in labeled_audio_ids:
-                print(f"Audio {audio_id}.wav has been already labeled!")
-            else:
-                write_labels(vad, audio_filepath, out_filepath)
-    
-    # start evaluating
+
+    # parse AVA-Speech true labeled segments
     label_filepath = os.path.join(args.dataset_path, "ava_speech_labels_v1.csv")
-    true_labels = parse_label_file(label_filepath, offset_time=900)
+    segments_per_audio_ref = (
+        parse_label_file(label_filepath, offset_time=900)
+    )
+    
+    # get available audio files
+    audio_files = glob(str(args.dataset_path) + "/*.wav")
+    # create plotting figure
+    plt.figure()
+    plt.xlabel("Recall"); plt.ylabel("Precision")
     for vad_name in args.vad_models:
-        out_label_filepath = os.path.join(args.out_path, vad_name+".csv")
-        hyp_labels = parse_label_file(out_label_filepath, offset_time=0)
-        dur_true_labels = get_duration_labels(true_labels, hyp_labels.keys())
-        overlaps = get_overlaps(true_labels, hyp_labels)
-        print(overlaps)
-        print(dur_true_labels)
-        print()
-        
+        Ps, Rs =[], [] # precisions & recalls
+        for agg, win_sz in product(args.agg_thresholds, args.window_sizes_ms):
+            # initialize VAD model with current params
+            vad = getattr(vads, vad_name)(
+                threshold=agg,
+                window_size_ms=win_sz
+            )
+            # get speech frames for every audio file
+            segments_per_audio_hyp = get_speech_boundaries_parallel(
+                audio_files,
+                n_workers=args.num_workers,
+                desc=f"VAD: {vad_name} (agg={agg}, win_sz={win_sz})"
+            )
+            # calculate precision & recall of the current VAD model
+            P, R = get_precision_recall(
+                segments_per_audio_ref,
+                segments_per_audio_hyp,
+                args.speech_labels
+            )
+            F1 = (2*P*R)/(P+R)
+            print(f"Precision: {P}, Recall: {R}, F1: {F1}")
+            Ps.append(P); Rs.append(R)
+        # plot P/R curve
+        plt.plot(Rs, Ps, label=vad_name)
+    # save plot
+    plt.savefig(args.out_path / "PR_curve.png")
+    plt.legend(); plt.autoscale(); plt.close()
 
 
 def main():
@@ -141,21 +180,32 @@ def main():
         help="Relative/Absolute path where AVA-Speech audio files are located."
     )
     parser.add_argument(
-        "--out-path", default="labels", type=Path,
-        help="Relative/Absolute path where the out labels will be located."
+        "--speech-labels", nargs='*', type=str,
+        default=["CLEAN_SPEECH", "SPEECH_WITH_MUSIC", "SPEECH_WITH_NOISE"],
+        help="List (space separated) of the true labels (case-sensitive) " + \
+            "that we are considering as 'speech'.",
     )
     parser.add_argument(
-        "--vad-models", nargs='*',
+        "--vad-models", required=True, nargs='*',
         help="List of vad models to be used.",
         choices=["WebRTC", "Silero", "SpeechBrain"],
     )
     parser.add_argument(
-        "--show-confusion-matrix", action='store_true',
-        help="A flag to print the confusion matrix for each vad model."
+        "--window-sizes-ms", required=True, nargs='*', type=int,
+        help="List of window-sizes (in milliseconds) to be used.",
     )
     parser.add_argument(
-        "--plot-PR-curve", action='store_true',
-        help="A flag to plot the Precision-Recall Curve for all models."
+        "--agg-thresholds", required=True, nargs='*', type=float,
+        help="List of aggressiveness thresholds to be used. " + \
+            "The higher the value is, the less sensitive the model gets.",
+    )
+    parser.add_argument(
+        "--out-path", default=".", type=Path,
+        help="Relative/Absolute path where the out labels will be located."
+    )
+    parser.add_argument(
+        "--num-workers", type=int, default=os.cpu_count()-1,
+        help="Number of workers working in parallel."
     )
     args = parser.parse_args()
     run(args)
