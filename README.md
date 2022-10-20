@@ -1,16 +1,17 @@
 # VAD Benchmark
-Benchmarking different VAD models on AVA-Speech dataset:
-    - Website: http://research.google.com/ava/download.html#ava_speech_download
-    - Paper: https://arxiv.org/pdf/1808.00606.pdf
+Benchmarking different VAD models on AVA-Speech dataset.
 
 ## Dataset
 
-You can download & pre-process audio from AVA-Speech dataset using the
-following bash script:
+You can download & pre-process audio from Google's
+[AVA-Speech](https://research.google.com/ava/download.html#ava_speech_download)
+dataset using the following bash script:
 ```
 $ cd dataset
 $ bash download_ava_speech.sh
 ```
+Also, you can check the published
+[paper](https://arxiv.org/pdf/1808.00606.pdf) for more information.
 
 ## Models
 The following are the list of the available VAD models:
@@ -22,22 +23,26 @@ The following are the list of the available VAD models:
 - **Nvidia's Marblenet**: https://github.com/NVIDIA/NeMo/blob/main/tutorials/asr/Voice_Activity_Detection.ipynb
 - **SpeechBrain**: https://huggingface.co/speechbrain/vad-crdnn-libriparty#perform-voice-activity-detection
 - **Voice Activity Detection Project:** https://github.com/filippogiruzzi/voice_activity_detection
-- ~~**PicoVoice Cobra**: https://github.com/Picovoice/cobra. [WEB-BASED]~~
+- ~~**PicoVoice Cobra**: https://github.com/Picovoice/cobra.~~
 
-Inside the `vads` directory, you will find a script for each model. This is how
-to use a VAD model (e.g `WebRTC`) to trim silence in a given audio file
-`samples/example_48k.wav` and write out the result in another audio file:
+Inside the `./vads` directory, you will find a script for each VAD model.
+
+The following is an example of how to use a VAD model (e.g `WebRTC`) to trim
+silence in a given audio file (e.g `samples/example_48k.wav`) and write out
+the trimmed audio file:
 ```python
-from os.path import dirname, abspath, join
-    
-print("Running WebRTC Vad")
-samples_dir = join(dirname(dirname(abspath(__file__))), "samples")
-audio_filepath = join(samples_dir, "example_48k.wav")
-audio, sr = load_audio(audio_filepath)
+from vads import WebRTC
+from utils import load_audio, save_audio
 
+# load audio file
+audio, sr = load_audio("samples/example_48k.wav")
+
+# Initialize WebRTC vad with default values
 vad = WebRTC()
-audio, sr = vad.trim_silence(audio, sr)
-save_audio(audio, sr, "webrtc_example_48k.wav")
+trimmed_audio, sr = vad.trim_silence(audio, sr)
+
+# save trimmed audio into current directory
+save_audio(trimmed_audio, sr, "webrtc_example_48k.wav")
 ```
 
 ## Benchmakring
@@ -88,5 +93,5 @@ This will result in a P/R curve that looks like the one shown below:
 
 ## TODO
 
-- [ ] create test cases.
 - [ ] create viz function for VAD.
+- [ ] create test cases.
