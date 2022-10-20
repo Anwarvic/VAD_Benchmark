@@ -166,11 +166,14 @@ def run(args):
             F1 = (2*P*R)/(P+R)
             print(f"Precision: {P}, Recall: {R}, F1: {F1}")
             Ps.append(P); Rs.append(R)
+        # sort P/R based on P values
+        Ps, Rs = zip(*sorted(zip(Ps, Rs)))
         # plot P/R curve
         plt.plot(Rs, Ps, label=vad_name)
     # save plot
+    plt.legend(); plt.autoscale()
     plt.savefig(args.out_path / "PR_curve.png")
-    plt.legend(); plt.autoscale(); plt.close()
+    plt.close()
 
 
 def main():
