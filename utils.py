@@ -2,7 +2,7 @@ import torch
 import torchaudio
 import numpy as np
 
-    
+
 def load_audio(audio_filepath):
     audio, sr = torchaudio.load(audio_filepath)
     return (audio, sr)
