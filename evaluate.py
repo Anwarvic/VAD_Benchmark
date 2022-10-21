@@ -108,6 +108,7 @@ def get_precision_recall(
             # cumulate hyp. speech duration
             speech_dur_hyp += hyp_seg["end"] - hyp_seg["start"]
             # iterate over segments of true labels
+            # TODO: Optimize this for-loop block
             for ref_seg in segments_per_audio_ref[audio_id]:
                 # ignore non-speech segments
                 if ref_seg["label"] not in speech_labels:
@@ -133,7 +134,7 @@ def run(args):
     os.makedirs(args.out_path, exist_ok=True)
 
     # parse AVA-Speech true labeled segments
-    label_filepath = os.path.join(args.dataset_path, "ava_speech_labels_v1.csv")
+    label_filepath = args.dataset_path / "ava_speech_labels_v1.csv"
     segments_per_audio_ref = (
         parse_label_file(label_filepath, offset_time=900)
     )
@@ -141,8 +142,8 @@ def run(args):
     # get available audio files
     audio_files = glob(str(args.dataset_path) + "/*.wav")
     # create plotting figure
-    plt.figure()
     plt.xlabel("Recall"); plt.ylabel("Precision")
+    plt.title(' / '.join(args.speech_labels))
     for vad_name in args.vad_models:
         Ps, Rs =[], [] # precisions & recalls
         for agg, win_sz in product(args.agg_thresholds, args.window_sizes_ms):
@@ -166,10 +167,10 @@ def run(args):
             F1 = (2*P*R)/(P+R)
             print(f"Precision: {P}, Recall: {R}, F1: {F1}")
             Ps.append(P); Rs.append(R)
-        # sort P/R based on P values
+        # sort P/R based according to P values
         Ps, Rs = zip(*sorted(zip(Ps, Rs)))
         # plot P/R curve
-        plt.plot(Rs, Ps, label=vad_name)
+        plt.plot(Rs, Ps, marker='.', label=vad_name)
     # save plot
     plt.legend(); plt.autoscale()
     plt.savefig(args.out_path / "PR_curve.png")
@@ -191,7 +192,7 @@ def main():
     parser.add_argument(
         "--vad-models", required=True, nargs='*',
         help="List of vad models to be used.",
-        choices=["WebRTC", "Silero", "SpeechBrain"],
+        choices=["WebRTC", "Silero", "SpeechBrain"], #TODO: get choices dynamically
     )
     parser.add_argument(
         "--window-sizes-ms", required=True, nargs='*', type=int,
