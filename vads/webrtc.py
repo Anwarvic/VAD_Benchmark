@@ -119,22 +119,6 @@ class WebRTC(Vad):
         return audio, sr
 
 
-    def trim_silence(self, audio, sr):
-        orig_sr = sr
-        # preprocess audio if needed
-        audio, sr = self._preprocess_audio(audio, sr)
-        # get frames having speech
-        frames = list(self._split_to_frames(audio, sr))
-        speech_frames = self._get_speech_frames(frames, audio, sr)
-        # merge speech frames
-        audio, sr = self._merge_speech_frames(speech_frames, audio, sr)
-        # post-process audio if needed
-        audio, sr = self._postprocess_audio(audio, sr)
-        # change sample rate back to the original one
-        if sr != orig_sr:
-            audio = change_sample_rate(audio, sr, orig_sr)
-        return audio, orig_sr
-
 
 
 if __name__ == "__main__":
