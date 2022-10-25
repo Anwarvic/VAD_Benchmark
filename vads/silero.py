@@ -154,25 +154,13 @@ class Silero(Vad):
         ])
         return audio, sr
 
+
     def _postprocess_audio(self, audio, sr):
         audio, sr = super()._postprocess_audio(audio, sr)
         # convert audio to 2D array
         audio = audio.unsqueeze(0)
         return audio, sr
 
-
-    def trim_silence(self, audio, sr):
-        # preprocess audio if needed
-        orig_sr = sr
-        audio, sr = self._preprocess_audio(audio, sr)
-        # get frames having speech
-        frames = list(self._split_to_frames(audio, sr))
-        speech_frames = self._get_speech_frames(frames, audio, sr)
-        # merge speech frames
-        audio, sr = self._merge_speech_frames(speech_frames, audio, sr)
-        # post-process audio if needed
-        audio, sr = self._postprocess_audio(audio, orig_sr)
-        return audio, sr
 
 
 if __name__ == "__main__":
