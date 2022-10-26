@@ -2,3 +2,5 @@ torch
 webrtcvad
 torchaudio
 onnxruntime
+pyaudio
+auditok
