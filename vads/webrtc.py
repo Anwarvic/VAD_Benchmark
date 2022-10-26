@@ -1,7 +1,10 @@
 import webrtcvad
 from collections import deque
 
-from utils import *
+from utils import (
+    convert_tensor_to_bytes,
+    convert_byte_to_tensor
+)
 from vads.vad import Vad
 
 
@@ -127,8 +130,9 @@ if __name__ == "__main__":
     print("Running WebRTC Vad")
     samples_dir = join(dirname(dirname(abspath(__file__))), "samples")
     audio_filepath = join(samples_dir, "double_48k.wav")
-    audio, sr = load_audio(audio_filepath)
 
     vad = WebRTC()
+    audio, sr = vad.read_audio(audio_filepath)
     audio, sr = vad.trim_silence(audio, sr)
-    save_audio(audio, sr, join(samples_dir, "webrtc_example_48k.wav"))
+    vad.save_audio(audio, sr, join(samples_dir, "webrtc_example_48k.wav"))
+    

@@ -13,6 +13,15 @@ class Vad:
             )
     
 
+    def read_audio(self, audio_filepath):
+        audio, sr = load_audio(audio_filepath)
+        return audio, sr
+    
+
+    def save_audio(self, audio, sr, out_filepath):
+        save_audio(audio, sr, out_filepath)
+    
+
     def _preprocess_audio(self, audio, sr):
         # check if audio is mono
         if audio.size(0) != 1:

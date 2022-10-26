@@ -165,14 +165,13 @@ class Silero(Vad):
 
 if __name__ == "__main__":
     from os.path import dirname, abspath, join
-    from utils import load_audio, save_audio
 
     print("Running Silero Vad")
     samples_dir = join(dirname(dirname(abspath(__file__))), "samples")
     audio_filepath = join(samples_dir, "example_16k.wav")
-    audio, sr = load_audio(audio_filepath)
 
     vad = Silero()
+    audio, sr = vad.read_audio(audio_filepath)
     audio, sr = vad.trim_silence(audio, sr)
-    save_audio(audio, sr, join(samples_dir, "silero_example_16k.wav"))
+    vad.save_audio(audio, sr, join(samples_dir, "silero_example_16k.wav"))
     
