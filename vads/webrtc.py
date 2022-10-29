@@ -43,7 +43,7 @@ class WebRTC(Vad):
         start_frame = 0.0
         num_frames = int(sr * (self._chunk_size_ms / 1000.0))
         n = num_frames * 2
-        while offset + n < len(audio):
+        while offset < len(audio):
             yield {
                 "data": audio[offset : offset+n],
                 "start": start_frame,
@@ -115,11 +115,6 @@ class WebRTC(Vad):
         ])
         # convert bytes to tensor
         return convert_byte_to_tensor(audio_bytes), sr
-    
-    
-    def _postprocess_audio(self, audio, sr):
-        audio, sr = super()._postprocess_audio(audio, sr)
-        return audio, sr
 
 
 
