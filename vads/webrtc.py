@@ -39,8 +39,7 @@ class WebRTC(Vad):
     
 
     def _split_to_frames(self, audio, sr):
-        offset = 0
-        start_frame = 0.0
+        offset, start_frame = 0, 0
         num_frames = int(sr * (self._chunk_size_ms / 1000.0))
         n = num_frames * 2
         while offset < len(audio):
