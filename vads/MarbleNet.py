@@ -4,23 +4,26 @@ from vads.vad import Vad
 from nemo.collections.asr.models import EncDecClassificationModel
 
 from utils import (
-    convert_byte_to_numpy,
     convert_byte_to_tensor,
     convert_tensor_to_bytes,
 )
 
-
 class MarbleNet(Vad):
-    def __init__(self, threshold, window_size_ms, frame_len=0.1):
+    def __init__(self,
+            threshold=0.4,
+            window_size_ms=10,
+            frame_overlap_ms=300
+        ):
         super().__init__(threshold, window_size_ms)
-        self._frame_len = frame_len
         self._vad = EncDecClassificationModel.from_pretrained(
             'vad_marblenet'
         )
         self._vad.eval() # set model to inference mode
         if torch.cuda.is_available():
             self._vad = self._vad.cuda()
-        self.vocab = list(self._vad._cfg.labels) + '_'
+        self._threshold = threshold
+        self._window_size_ms = window_size_ms
+        self._frame_overlap_ms = frame_overlap_ms
         self._valid_sr = [self._vad._cfg.sample_rate]
     
 
@@ -33,9 +36,8 @@ class MarbleNet(Vad):
 
 
     def _split_to_frames(self, audio, sr):
-        offset = 0
-        start_frame = 0.0
-        num_frames = int(sr * (self._chunk_size_ms / 1000.0))
+        offset, start_frame = 0, 0
+        num_frames = int(sr * (self._window_size_ms/ 1000.0))
         n = num_frames * 2
         while offset < len(audio):
             yield {
@@ -48,8 +50,38 @@ class MarbleNet(Vad):
 
 
     def _get_speech_frames(self, frames, audio, sr):
-        pass
-    
+        window_size_samples = int(self._window_size_ms * sr / 1000)
+        frame_overlap_samples = int(self._frame_overlap_ms * sr / 1000)
+        # create buffer
+        buffer = torch.zeros(
+            size= (2 * frame_overlap_samples + window_size_samples, ),
+        )
+        for frame in frames:
+            signal = convert_byte_to_tensor(frame["data"]).squeeze()
+            # pad shorter signals
+            if len(signal) < window_size_samples:
+                signal = torch.nn.functional.pad(
+                    signal,
+                    pad=[0, window_size_samples - len(signal)],
+                    mode='constant'
+                )
+            
+            buffer[ : -window_size_samples].data = buffer[window_size_samples : ].data
+            buffer[-window_size_samples : ].data.copy_(signal.data)
+            # change the shape to [#batches, #frames] where #batches = 1
+            audio_signal = buffer.unsqueeze(dim=0).to(self._vad.device)
+            batch_size = torch.as_tensor([1], dtype=torch.int64).to(self._vad.device)
+            logits = self._vad.forward(
+                input_signal=audio_signal,
+                input_signal_length=batch_size
+            )[0]
+            # get probs, which is [background_prob, speech_prob]
+            probs = torch.softmax(logits, dim=-1)
+            speech_prob = probs[1].item()
+            if speech_prob >= self._threshold:
+                yield frame
+            else:
+                print("YES")
 
     def _merge_speech_frames(self, speech_frames, audio, sr):
         audio_bytes = b''.join([
@@ -62,34 +94,16 @@ class MarbleNet(Vad):
 
 
 
-if __name__ == '__main__':
-    import wave
+if __name__ == "__main__":
+    from os.path import dirname, abspath, join
 
-    CHUNK_SIZE = int(0.025*16000)
-    # first method
-    blocks = []
-    with wave.open("VAD_demo.wav", 'rb') as wf:
-        data = wf.readframes(CHUNK_SIZE)
-        while len(data) > 0:
-            blocks.append(data)
-            data = wf.readframes(CHUNK_SIZE)
+    print("Running MarbleNet Vad")
+    samples_dir = join(dirname(dirname(abspath(__file__))), "samples")
+    audio_filepath = join(samples_dir, "double_48k.wav")
+
+
+    vad = MarbleNet()
+    audio, sr = vad.read_audio(audio_filepath)
+    audio, sr = vad.trim_silence(audio, sr)
+    vad.save_audio(audio, sr, join(samples_dir, "marblenet_example_16k.wav"))
     
-    # second method
-    from utils import load_audio
-    my_blocks = []
-    audio, sr = load_audio("VAD_demo.wav")
-    audio = convert_tensor_to_bytes(audio)
-    offset = 0
-    n = CHUNK_SIZE * 2
-    while offset < len(audio):
-        my_blocks.append(audio[offset : offset+n])
-        offset += n
-
-    # verify they are the same
-    assert len(blocks) == len(my_blocks)
-    from tqdm import tqdm
-    for b1, b2 in tqdm(zip(blocks, my_blocks)):
-        assert b1 == b2
-    
-
-
