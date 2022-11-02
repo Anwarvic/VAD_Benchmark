@@ -1,4 +1,3 @@
-
 import torch
 from nemo.collections.asr.models import EncDecClassificationModel
 
@@ -58,10 +57,6 @@ class MarbleNet(Vad):
                 if use_cuda and torch.cuda.is_available()
                 else torch.device("cpu")
             )
-        )
-        # load preprocessor module
-        vad.preprocessor = vad.from_config_dict(
-            vad._cfg.preprocessor
         )
         # set model to inference mode
         vad.eval()
