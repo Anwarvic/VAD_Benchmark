@@ -15,6 +15,7 @@ WAV files; and it has the following format:
 --------------------------------------------
 """
 import os
+import inspect
 import argparse
 import pandas as pd
 from glob import glob
@@ -122,15 +123,14 @@ def get_precision_recall(
                     else 0
                 )
     # calculate precision & recall
-    P = speech_overlap_dur / speech_dur_hyp
-    R = speech_overlap_dur / speech_dur_ref
+    P = speech_overlap_dur / (speech_dur_hyp + 1e-10)
+    R = speech_overlap_dur / (speech_dur_ref + 1e-10)
     return P, R
 
 
 
 def run(args):
     global vad
-    vads = __import__("vads")
     os.makedirs(args.out_path, exist_ok=True)
 
     # parse AVA-Speech true labeled segments
@@ -148,7 +148,7 @@ def run(args):
         Ps, Rs =[], [] # precisions & recalls
         for agg, win_sz in product(args.agg_thresholds, args.window_sizes_ms):
             # initialize VAD model with current params
-            vad = getattr(vads, vad_name)(
+            vad = getattr(VADS, vad_name)(
                 threshold=agg,
                 window_size_ms=win_sz
             )
@@ -164,7 +164,7 @@ def run(args):
                 segments_per_audio_hyp,
                 args.speech_labels
             )
-            F1 = (2*P*R)/(P+R)
+            F1 = (2*P*R)/(P+R+1e-10)
             print(f"Precision: {P}, Recall: {R}, F1: {F1}")
             Ps.append(P); Rs.append(R)
         # sort P/R based according to P values
@@ -178,6 +178,10 @@ def run(args):
 
 
 def main():
+    # list all available VAD models dynamically
+    AVAILABLE_VAD_MODELS = [
+        x for x in dir(VADS) if inspect.isclass(getattr(VADS, x))
+    ]
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dataset-path", required=True, type=Path,
@@ -190,9 +194,8 @@ def main():
             "that we are considering as 'speech'.",
     )
     parser.add_argument(
-        "--vad-models", required=True, nargs='*',
+        "--vad-models", required=True, nargs='*', choices=AVAILABLE_VAD_MODELS,
         help="List of vad models to be used.",
-        choices=["WebRTC", "Silero", "SpeechBrain"], #TODO: get choices dynamically
     )
     parser.add_argument(
         "--window-sizes-ms", required=True, nargs='*', type=int,
@@ -216,4 +219,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # import vads.__init__
+    VADS = __import__("vads") 
     main()
