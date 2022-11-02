@@ -17,28 +17,12 @@ class MarbleNet(Vad):
             step_size_ms: int = 10,
             model_name: str = "vad_marblenet",
             use_onnx: bool = True,
+            use_cuda=False
         ):
         super().__init__(threshold, window_size_ms)
-        AVAILABLE_MODEL_NAMES = {
-            model_info.pretrained_model_name
-            for model_info in EncDecClassificationModel.list_available_models()
-            if "vad" in model_info.pretrained_model_name
-        }
-        if model_name not in AVAILABLE_MODEL_NAMES:
-            raise ValueError(
-                f"{model_name} is not a valid VAD model name.\n" + \
-                f"Available VAD model names: {AVAILABLE_MODEL_NAMES}"
-            )
-        # Load model
-        self._vad = EncDecClassificationModel.from_pretrained(model_name)
-        self._vad.preprocessor = self._vad.from_config_dict(
-            self._vad._cfg.preprocessor
-        )
-        # set model to inference mode
-        self._vad.eval()
-        # move model to cuda (if available)
-        if torch.cuda.is_available():
-            self._vad = self._vad.cuda()
+        # load vad model
+        self._vad = self._load_pretrained_model(model_name, use_cuda)
+        # use ONNX runtime for faster inference
         if use_onnx:
             import onnxruntime
             from tempfile import TemporaryDirectory
@@ -53,6 +37,35 @@ class MarbleNet(Vad):
         self._window_size_ms = window_size_ms
         self._step_size_ms = step_size_ms
         self._valid_sr = [self._vad._cfg.sample_rate]
+    
+
+    def _load_pretrained_model(self, model_name, use_cuda=False):
+        AVAILABLE_MODEL_NAMES = {
+            model_info.pretrained_model_name
+            for model_info in EncDecClassificationModel.list_available_models()
+            if "vad" in model_info.pretrained_model_name
+        }
+        if model_name not in AVAILABLE_MODEL_NAMES:
+            raise ValueError(
+                f"{model_name} is not a valid VAD model name.\n" + \
+                f"Available VAD model names: {AVAILABLE_MODEL_NAMES}"
+            )
+        # Load pre-trained model
+        vad = EncDecClassificationModel.from_pretrained(
+            model_name = model_name,
+            map_location = (
+                torch.device("cuda")
+                if use_cuda and torch.cuda.is_available()
+                else torch.device("cpu")
+            )
+        )
+        # load preprocessor module
+        vad.preprocessor = vad.from_config_dict(
+            vad._cfg.preprocessor
+        )
+        # set model to inference mode
+        vad.eval()
+        return vad
     
 
     def _preprocess_audio(self, audio, sr):
@@ -147,7 +160,6 @@ if __name__ == "__main__":
     print("Running MarbleNet Vad")
     samples_dir = join(dirname(dirname(abspath(__file__))), "samples")
     audio_filepath = join(samples_dir, "example_48k.wav")
-
 
     vad = MarbleNet()
     audio, sr = vad.read_audio(audio_filepath)
