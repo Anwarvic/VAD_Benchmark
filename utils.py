@@ -37,6 +37,13 @@ def get_closest_sample_rate(curr_sr, valid_sr):
     return new_sr
 
 
+def convert_tensor_to_numpy(audio):
+    if audio.requires_grad:
+        return audio.detach().cpu().numpy()
+    else:
+        return audio.cpu().numpy()
+
+
 def convert_tensor_to_bytes(audio, dtype="int16"):
     # torch.Tensor -> np.float32 ->  np.int16(PCM_16) -> bytes
     return convert_tensor_to_pcm(audio, dtype).tobytes()
@@ -58,7 +65,7 @@ def convert_tensor_to_pcm(audio, dtype="int16"):
 
 
 def convert_byte_to_tensor(audio):
-    # bytes -> np.åint16(PCM_16) -> np.float32 -> torch.Tensor
+    # bytes -> np.int16(PCM_16) -> np.float32 -> torch.Tensor
     return torch.Tensor(
         np.expand_dims(convert_byte_to_numpy(audio), 0)
     )
