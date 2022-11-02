@@ -1,32 +1,53 @@
 
 import torch
+import onnxruntime
+from tempfile import TemporaryDirectory
 from nemo.collections.asr.models import EncDecClassificationModel
 
 from vads.vad import Vad
 from utils import (
     convert_byte_to_tensor,
     convert_tensor_to_bytes,
+    convert_tensor_to_numpy,
 )
+
 
 class MarbleNet(Vad):
     def __init__(self,
-            threshold=0.8,
-            window_size_ms=150,
-            step_size_ms=10,
+            threshold: float = 0.4,
+            window_size_ms: int = 150,
+            step_size_ms: int = 10,
+            model_name: str = "vad_marblenet",
         ):
         super().__init__(threshold, window_size_ms)
-        self._vad = EncDecClassificationModel.from_pretrained(
-            'vad_marblenet'
-        )
+        AVAILABLE_MODEL_NAMES = {
+            model_info.pretrained_model_name
+            for model_info in EncDecClassificationModel.list_available_models()
+            if "vad" in model_info.pretrained_model_name
+        }
+        if model_name not in AVAILABLE_MODEL_NAMES:
+            raise ValueError(
+                f"{model_name} is not a valid VAD model name.\n" + \
+                f"Available VAD model names: {AVAILABLE_MODEL_NAMES}"
+            )
+        # Load model
+        self._vad = EncDecClassificationModel.from_pretrained(model_name)
         self._vad.preprocessor = self._vad.from_config_dict(
             self._vad._cfg.preprocessor
         )
-        self._vad.eval() # set model to inference mode
+        # set model to inference mode
+        self._vad.eval()
+        # move model to cuda (if available)
         if torch.cuda.is_available():
             self._vad = self._vad.cuda()
+        # export the model to a tmp directory to be used by ONNX
+        with TemporaryDirectory() as temp_dir:
+            tmp_filepath = f"{temp_dir}/vad.onnx"
+            self._vad.export(tmp_filepath)
+            self._onnx_session = onnxruntime.InferenceSession(tmp_filepath)
         self._threshold = threshold
-        self._step_size_ms = step_size_ms
         self._window_size_ms = window_size_ms
+        self._step_size_ms = step_size_ms
         self._valid_sr = [self._vad._cfg.sample_rate]
     
 
@@ -76,10 +97,22 @@ class MarbleNet(Vad):
             audio_signal_length = (
                 torch.as_tensor(buffer.size()).to(self._vad.device)
             )
-            logits = self._vad.forward(
-                input_signal=audio_signal,
-                input_signal_length=audio_signal_length
+            # preprocess signal
+            processed_signal, _ = self._vad.preprocessor(
+                input_signal=audio_signal, length=audio_signal_length,
+            )
+            logits = torch.from_numpy(
+                self._onnx_session.run(
+                    None,
+                    input_feed={
+                      'audio_signal': convert_tensor_to_numpy(processed_signal)
+                    }
+                )[0]
             )[0]
+            # logits = self._vad.forward(
+            #     input_signal=audio_signal,
+            #     input_signal_length=audio_signal_length
+            # )[0]
             # get probs, which is [background_prob, speech_prob]
             probs = torch.softmax(logits, dim=-1)
             # get speech probability
