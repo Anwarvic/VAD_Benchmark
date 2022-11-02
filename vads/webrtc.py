@@ -11,7 +11,8 @@ from vads.vad import Vad
 class WebRTC(Vad):
     def __init__(self,
             threshold=0.9,
-            window_size_ms=96,
+            window_size_ms=100,
+            step_size_ms=10,
             merge_ratio=0.9
         ):
         super().__init__(threshold, window_size_ms)
@@ -24,7 +25,7 @@ class WebRTC(Vad):
                     else 3
         )
         self._vad = webrtcvad.Vad(agg)
-        self._chunk_size_ms = 10
+        self._step_size_ms = step_size_ms
         self._window_size_ms = window_size_ms
         self._merge_ratio = merge_ratio
         self._valid_sr = [8000, 16000, 32000, 48000]
@@ -40,9 +41,9 @@ class WebRTC(Vad):
 
     def _split_to_frames(self, audio, sr):
         offset, start_frame = 0, 0
-        num_frames = int(sr * (self._chunk_size_ms / 1000.0))
+        num_frames = int(sr * (self._step_size_ms / 1000.0))
         n = num_frames * 2
-        while offset < len(audio):
+        while offset + n < len(audio):
             yield {
                 "data": audio[offset : offset+n],
                 "start": start_frame,
@@ -53,7 +54,7 @@ class WebRTC(Vad):
 
 
     def _get_speech_frames(self, frames, audio, sr):
-        num_blocks = int(self._window_size_ms / self._chunk_size_ms)
+        num_blocks = int(self._window_size_ms / self._step_size_ms)
         # We use a deque for our sliding window/ring buffer.
         ring_buffer = deque(maxlen=num_blocks)
         # We have two states: TRIGGERED and NOTTRIGGERED. We start in the
@@ -123,7 +124,7 @@ if __name__ == "__main__":
     
     print("Running WebRTC Vad")
     samples_dir = join(dirname(dirname(abspath(__file__))), "samples")
-    audio_filepath = join(samples_dir, "double_48k.wav")
+    audio_filepath = join(samples_dir, "example_48k.wav")
 
     vad = WebRTC()
     audio, sr = vad.read_audio(audio_filepath)
