@@ -1,6 +1,10 @@
 # VAD Benchmark
 Benchmarking different VAD models on AVA-Speech dataset.
 
+<div align="center">
+    <img width="758" alt="image" src="https://github.com/Anwarvic/VAD_Benchmark/assets/15960959/c0528532-bf59-4b64-a7f8-75ca8a3f8d78">
+</div>
+
 ## Dataset
 
 You can download & pre-process audio from Google's
